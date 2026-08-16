@@ -1,0 +1,171 @@
+---
+title: "NYPD - Shootings Data"
+output: html_document
+---
+
+# Introduction
+
+The NYPD Shooting Incidents data set includes shooting incident data from January 1st, 2006 through December 31st, 2024.
+As such, it very interestingly covers the Covid19 Pandemic period.
+
+The question I have about this data set is whether time of day impacts shooting incidents and whether the total number
+of shootings are trending up or down over time.
+
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+
+# tidy
+library(tidyverse)
+library(lubridate)
+library(hms)
+```
+
+```{r covid19}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+file_names <- c(
+  "time_series_covid19_confirmed_global.csv",
+  "time_series_covid19_deaths_global.csv",
+  "time_series_covid19_confirmed_US.csv",
+  "time_series_covid19_deaths_US.csv"
+)
+
+urls <- str_c(url_in, file_names)
+
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+us_cases <- read_csv(urls[3])
+us_deaths <- read_csv(urls[4])
+```
+
+```{r dataset import}
+nypd_shootings <- read_csv("https://data.cityofnewyork.us/api/v3/views/833y-fsy8/export.csv")
+
+spec(nypd_shootings)
+```
+
+```{r dataset tidy}
+nypd_shootings <- nypd_shootings %>%
+  select(c(INCIDENT_KEY, OCCUR_DATE, OCCUR_TIME)) %>%
+  mutate(
+    OCCUR_DATE = mdy(OCCUR_DATE),
+    
+    year = year(OCCUR_DATE),
+    hour = hour(as_hms(OCCUR_TIME))
+  )
+
+nypd_shootings
+tail(nypd_shootings)
+```
+
+```{r shootings by time of day}
+nypd_shootings %>%
+  distinct(INCIDENT_KEY, hour) %>%
+  count(hour) %>%
+  ggplot(aes(hour, n)) +
+  theme_minimal() +
+  geom_col(fill = "purple") +
+  scale_x_continuous(breaks = 0:23) +
+  labs(
+    title = "NYPD Shootings by Time of Day",
+    x = "Hour",
+    y = "Number of incidents"
+  )
+```
+
+```{r covid19 dates}
+us_cases
+
+covid_dates <- us_cases %>%
+  pivot_longer(
+    cols = matches("^\\d{1,2}/\\d{1,2}/\\d{2}$"),
+    names_to = "date",
+    values_to = "cases"
+  ) %>%
+  #filter(cases > 300) %>%
+  mutate(date = mdy(date)) %>%
+  distinct(date)
+
+covid_dates
+
+covid_start <- min(covid_dates$date)
+covid_end <- max(covid_dates$date)
+
+numeric_covid_start <- year(covid_start) + (month(covid_start) - 1) / 12
+numeric_covid_end <- year(covid_end) + (month(covid_start) - 1) / 12
+
+covid_start
+covid_end
+```
+
+```{r shootings and covid19}
+yearly_incidents <- nypd_shootings %>%
+  distinct(INCIDENT_KEY, year) %>%
+  count(year)
+
+yearly_incidents %>%
+  ggplot(aes(year, n)) +
+  theme_minimal() +
+  
+  annotate(
+    "rect",
+    xmin = numeric_covid_start,
+    xmax = numeric_covid_end,
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "lightblue",
+    alpha = 0.3
+  ) +
+  
+  geom_line() +
+  geom_smooth(method = "lm", se = FALSE) +
+  
+  labs(
+    title = "NYC Shootings by Year",
+    subtitle = "Shaded area represents the COVID-19 pandemic period",
+    x = "Year",
+    y = "Number of incidents"
+  )
+```
+
+```{r shootings by time of day during covid19}
+nypd_shootings
+
+nypd_shootings %>%
+  filter(between(OCCUR_DATE, covid_start, covid_end)) %>%
+  distinct(INCIDENT_KEY, hour) %>%
+  count(hour) %>%
+  ggplot(aes(hour, n)) +
+  theme_minimal() +
+  geom_col(fill = "purple") +
+  scale_x_continuous(breaks = 0:23) +
+  labs(
+    title = "NYPD Shootings by Time of Day During Covid19",
+    x = "Hour",
+    y = "Number of incidents"
+  )
+```
+
+## Conclusion
+I was very interested in the timing of shootings from this data set, because I wanted to be able to draw
+conclusions from the data. However, the more I think about this, the more I find that the data may be influenced by biases
+that I have and that may be present within the data itself.
+
+For example, I notice that time of day seems to play a major role in the number of shooting incidents. Incidents
+late at night immediately draw my mind to thoughts of the bar scene when there is no data to back up any correlation
+to population at bars and the subset of that population involved in shooting incidents.
+
+It is also possible that the source of data is already biased. For example, if more police are in areas where
+shooting incidents concentrate in the evenings and early morning, it could contaminate the data set.
+
+What's also interesting to me about this data set is that it seems to show an overlapping increase with the Covid19 data set from the
+course. During the Covid19 pandemic, it appears that recorded shooting incidents rose in 2020 and 2021.
+
+Overall, it does appear that shooting incidents are trending down, and the time of day that shooting incidents reportedly
+occurred roughly doubled in the evening and early morning hours.
+
+```{r session}
+sessionInfo()
+```
